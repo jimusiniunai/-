@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta name="keywords" content="天地图"/>
+    <title>南京市出行路线查询系统</title>
+    <script type="text/javascript" src="http://api.tianditu.gov.cn/api?v=4.0&tk=2e8f9e5179b645416c70ef3dfe9bafb2"></script>
+    <script src="http://lbs.tianditu.gov.cn/js/lib/jquery/jquery-1.7.2.min.js"></script>
+    <style type="text/css">
+        body,html{width:100%;height:100%;margin:4px;font-family:"Microsoft YaHei"}
+		#container{width: 100%;margin: auto}
+        #tool{
+            width: 20%;float: left;height: 100px;
+            position:absolute;
+            top:100px;
+            left:10px;
+            z-index: 9997;
+
+        }
+        #pointDiv
+        {
+            position:absolute;
+            top:5px;
+            left:20px;
+            z-index: 9999;
+        }
+        #stateDiv
+        {
+            position:absolute;
+            bottom:5px;
+            left:400px;
+            z-index: 9999;
+        }
+
+        #roadDiv{
+            height: 40px;
+            width: 20%;
+            position:absolute;
+            top:10px;
+            right:5px;
+            z-index: 9999;
+
+        }
+        #roadResultDiv
+        {
+            height: 400px;
+            width: 20%;
+            position:absolute;
+            top:250px;
+            right:5px;
+            z-index: 9999;
+        }
+
+        #mapDiv1{width:100%;height:700px}
+		#resultDiv1{width: 100%;height: 400px;overflow:auto}
+    </style>
+    <style type="text/css">
+
+        .prompt {
+            display: none;
+            font-size: 13px;
+            border: 1px solid #999999;
+        }
+
+        .statistics {
+            display: none;
+            font-size: 13px;
+            border: 1px solid #999999;
+            overflow-y: scroll;
+            height: 150px;
+        }
+
+        .suggests {
+            display: none;
+            font-size: 13px;
+            border: 1px solid #999999;
+        }
+
+        .result {
+            display: none;
+            font-size: 12px;
+            border: 1px solid #999999;
+            line-height: 27px;
+            padding-left: 7px;
+        }
+    </style>
+    <script>
+        var  map;
+        var zoom=15;
+        var drivingRoute;	//驾车路线规划对象
+        var obj;			//搜索结果
+        var startLngLat;	//起点经纬度
+        var endLngLat;		//终点经纬度
+        var startIcon = "http://lbs.tianditu.gov.cn/images/bus/start.png";	//起点图标
+        var endIcon = "http://lbs.tianditu.gov.cn/images/bus/end.png";		//终点图标
+        var infoWin = null;
+        var lnglat0= []; //存放搜索点的经纬度
+        var lnglatName=[];//存放搜索点的名称
+        function onload() {
+            map = new T.Map('mapDiv1');
+            //创建比例尺控件对象
+            var scale = new T.Control.Scale();
+            //添加比例尺控件
+            map.addControl(scale);
+
+            map.centerAndZoom(new T.LngLat(118.6354, 32.08666), zoom);
+            map.disableDoubleClickZoom();
+
+            var config = {
+                policy: 0,	//驾车策略
+                onSearchComplete: searchResult	//检索完成后的回调函数
+            };
+            drivingRoute = new T.DrivingRoute(map, config);
+            //创建地点搜索对象
+            var config1 = {
+                pageCapacity: 10,	//每页显示的数量
+                onSearchComplete: localSearchResult	//接收数据的回调函数
+            };
+            //建立关键词搜索对象
+            localsearch = new T.LocalSearch(map, config1);
+
+            var config2 = {
+                pageCapacity: 10,	//每页显示的数量
+                onSearchComplete: localSearchResult1	//接收数据的回调函数
+            };
+
+            //建立提示词搜索对象
+            localsearch1 = new T.LocalSearch(map, config2);
+            $("#point").keyup(function () {
+                localsearch1.search(document.getElementById('point').value,5)
+            });
+
+
+
+            //创建右键菜单对象
+            var menu = new T.ContextMenu({width: 140});
+            //添加右键菜单
+
+            var txtMenuItem = [
+                {
+                    text: '放大',
+                    callback: function () {
+                        map.zoomIn()
+                    }
+                },
+                {
+                    text: '缩小',
+                    callback: function () {
+                        map.zoomOut()
+                    }
+                },
+                {
+                    text: '放置到最大级',
+                    callback: function () {
+                        map.setZoom(18)
+                    }
+                },
+                {
+                    text: '查看全国',
+                    callback: function () {
+                        map.setZoom(4)
+                    }
+                },
+                {
+                    text: '定位南京工业大学',
+                    callback: function () {
+                        map.panTo(new T.LngLat(118.6354,32.08666),14 );
+                    }
+                },
+                {
+                    text: '获得右键点击处坐标',
+                    isDisable: false,
+                    callback: function (lnglat) {
+                        document.getElementById("state").value="鼠标点击位置:"+lnglat.getLng() + "," + lnglat.getLat();
+                    }
+                },
+                {
+                    text: '获得地图缩放级别',
+                    isDisable: false,
+                    callback: function () {
+                        document.getElementById("state").value="Zoom="+map.getZoom();
+                    }
+                }
+            ];
+            for (var i = 0; i < txtMenuItem.length; i++) {
+
+                //添加菜单项
+                var item = new T.MenuItem(txtMenuItem[i].text, txtMenuItem[i].callback);
+                //item.disable();
+                menu.addItem(item);
+                if (i == 1 || i == 3) {
+                    //添加分割线
+                    menu.addSeparator();
+                }
+            }
+            map.addContextMenu(menu);
+        }
+
+        function searchDrivingRoute() {
+            //清空显示列表
+            document.getElementById("resultDiv1").innerHTML = "";
+            //清空地图
+            map.clearOverLays();
+
+            //起点经纬度
+            var startVal = document.getElementById("start").value.split(",");
+            startLngLat = new T.LngLat(startVal[0], startVal[1]);
+            //终点经纬度
+            var endVal = document.getElementById("end").value.split(",");
+            endLngLat = new T.LngLat(endVal[0], endVal[1]);
+
+            //设置驾车策略
+            drivingRoute.setPolicy(getRadioValue());
+            //驾车路线搜索
+            drivingRoute.search(startLngLat, endLngLat);
+        }
+
+        function searchResult(result) {
+            //添加起始点
+            createStartMarker(result);
+
+            obj = result;
+            var resultList = document.createElement("div");
+            //获取方案个数
+            var routes = result.getNumPlans();
+            for (var i = 0; i < routes; i++) {
+
+                //获得单条驾车方案结果对象
+                var plan = result.getPlan(i);
+
+                //显示单个方案面板
+                var div = document.createElement("div");
+                div.style.cssText = "font-size:12px; cursor:pointer; border:1px solid #999999";
+
+                //显示方案内容
+                var describeStr = "<strong>总时间：" + plan.getDuration() + "秒，总距离：" + Math.round(plan.getDistance()) + "公里</strong>";
+                describeStr += "<div><img src='" + startIcon + "'/>" + document.getElementById("start").value + "</div>";
+
+                //显示该方案每段的描述信息
+                var numRoutes = plan.getNumRoutes();
+                for (var m = 0; m < numRoutes; m++) {
+                    var route = plan.getRoute(m);
+                    describeStr += (m + 1) + ".<span>" + route.getDescription() + "</span><br/>"
+
+                    //显示该方案每段的详细描述信息
+                    var numStepsStr = "";
+                    var numSteps = route.getNumSteps();
+                    for (var n = 0; n < numSteps; n++) {
+                        var step = route.getStep(n);
+                        numStepsStr += "<p>" + (n + 1) + ")<a href='javascript://' onclick='show_Position(\"" + step.getPosition().getLng() + "\",\"" + step.getPosition().getLat() + "\",\"" + step.getDescription() + "\");'>" + step.getDescription() + "</a></p>";
+                    }
+                    describeStr += numStepsStr;
+                }
+                describeStr += "<div><img src='" + endIcon + "'/>" + document.getElementById("end").value + "</div>";
+                div.innerHTML = describeStr;
+                resultList.appendChild(div);
+
+                //显示驾车线路
+                createRoute(plan.getPath());
+                //显示最佳级别
+                map.setViewport(plan.getPath());
+            }
+            //显示公交搜索结果
+            document.getElementById("resultDiv1").appendChild(resultList);
+        }
+
+        function createRoute(lnglats) {
+            //创建线对象
+            var line = new T.Polyline(lnglats, {color: "#2C64A7", weight: 5, opacity: 0.9});
+            //向地图上添加线
+            map.addOverLay(line);
+        }
+
+        //添加起始点
+        function createStartMarker(result) {
+            var startMarker = new T.Marker(result.getStart(), {
+                icon: new T.Icon({
+                    iconUrl: startIcon,
+                    iconSize: new T.Point(44, 34),
+                    iconAnchor: new T.Point(12, 31)
+                })
+            });
+            map.addOverLay(startMarker);
+            var endMarker = new T.Marker(result.getEnd(), {
+                icon: new T.Icon({
+                    iconUrl: endIcon,
+                    iconSize: new T.Point(44, 34),
+                    iconAnchor: new T.Point(12, 31)
+                })
+            });
+            map.addOverLay(endMarker);
+        }
+
+        //定位关键点
+        function show_Position(lng, lat, des) {
+            if (infoWin) {
+                map.removeOverLay(infoWin);
+                infoWin = null;
+            }
+            var lnglat = new T.LngLat(lng, lat);
+            infoWin = new T.InfoWindow(des, new T.Point([0, 0]));
+            infoWin.setLngLat(lnglat);
+            map.addOverLay(infoWin);
+        }
+
+        //获得驾车路线策略
+        function getRadioValue() {
+            var obj = document.getElementsByName("planType");
+            for (var i = 0; i < obj.length; i++) {
+                if (obj[i].checked) {
+                    return obj[i].value;
+                }
+            }
+        }
+
+
+        function localSearchResult(result) {
+            //清空地图及搜索列表
+            clearAll();
+            //添加提示词
+            prompt(result);
+
+            //根据返回类型解析搜索结果
+            switch (parseInt(result.getResultType())) {
+                case 1:
+                    //解析点数据结果
+                    pois(result.getPois());
+                    break;
+                case 2:
+                    //解析推荐城市
+                    statistics(result.getStatistics());
+                    break;
+                case 3:
+                    //解析行政区划边界
+                    area(result.getArea());
+                    break;
+            }
+        }
+
+        function localSearchResult1(result) {
+            //清空地图及搜索列表
+            clearAll();
+            //添加提示词
+            prompt(result);
+            //解析建议词信息
+            suggests(result.getSuggests());
+            //根据返回类型解析搜索结果
+            switch (parseInt(result.getResultType())) {
+                case 1:
+                    //解析点数据结果
+                    pois(result.getPois());
+                    break;
+                case 2:
+                    //解析推荐城市
+                    statistics(result.getStatistics());
+                    break;
+                case 3:
+                    //解析行政区划边界
+                    area(result.getArea());
+                    break;
+            }
+        }
+
+        //解析提示词
+        function prompt(obj) {
+            var prompts = obj.getPrompt();
+            if (prompts) {
+                var promptHtml = "";
+                for (var i = 0; i < prompts.length; i++) {
+                    var prompt = prompts[i];
+                    var promptType = prompt.type;
+                    var promptAdmins = prompt.admins;
+                    var meanprompt = prompt.DidYouMean;
+                    if (promptType == 1) {
+                        promptHtml += "<p>您是否要在" + promptAdmins[0].name + "</strong>搜索更多包含<strong>" + obj.getKeyword() + "</strong>的相关内容？<p>";
+                    }
+                    else if (promptType == 2) {
+                        promptHtml += "<p>在<strong>" + promptAdmins[0].name + "</strong>没有搜索到与<strong>" + obj.getKeyword() + "</strong>相关的结果。<p>";
+                        if (meanprompt) {
+                            promptHtml += "<p>您是否要找：<font weight='bold' color='#035fbe'><strong>" + meanprompt + "</strong></font><p>";
+                        }
+                    }
+                    else if (promptType == 3) {
+                        promptHtml += "<p style='margin-bottom:3px;'>有以下相关结果，您是否要找：</p>"
+                        for (i = 0; i < promptAdmins.length; i++) {
+                            promptHtml += "<p>" + promptAdmins[i].name + "</p>";
+                        }
+                    }
+                }
+                if (promptHtml != "") {
+                    document.getElementById("promptDiv").style.display = "block";
+                    document.getElementById("promptDiv").innerHTML = promptHtml;
+                }
+            }
+        }
+
+
+        //解析点数据结果
+        function pois(obj) {
+            if (obj) {
+                //坐标数组，设置最佳比例尺时会用到
+                var zoomArr = [];
+                var nameArr = [];
+                var divMarker = document.createElement("div");
+                for (var i = 0; i < obj.length; i++) {
+                    //闭包
+                    (function (i) {
+                        //名称
+                        var name = obj[i].name;
+                        nameArr.push(name);
+                        //地址
+                        var address = obj[i].address;
+                        //坐标
+                        var lnglatArr = obj[i].lonlat.split(" ");
+                        var lnglat = new T.LngLat(lnglatArr[0], lnglatArr[1]);
+
+                        var winHtml = "名称:" + name + "<br/>地址:" + address;
+
+                        //创建标注对象
+                        var marker = new T.Marker(lnglat);
+                        //地图上添加标注点
+                        map.addOverLay(marker);
+                        //注册标注点的点击事件
+                        var markerInfoWin = new T.InfoWindow(winHtml, {autoPan: true});
+                        marker.addEventListener("click", function () {
+                            marker.openInfoWindow(markerInfoWin);
+
+                            var lnglat=marker.getLngLat ();
+                            map.panTo(lnglat,16);
+                            var id1=document.getElementById("start");
+                            var id2=document.getElementById("end");
+                            var id3=document.getElementById("start_name");
+                            var id4=document.getElementById("end_name");
+
+                            if(id1.value==1)
+                            {
+                                id1.value=lnglat.getLng()+','+lnglat.getLat();
+                                id3.value=name;
+                            }
+
+                            else if(id2.value==1)
+                            {
+                                id2.value=lnglat.getLng()+','+lnglat.getLat();
+                                id4.value=name;
+                            }
+
+                        });
+
+                        zoomArr.push(lnglat);
+                        var a = document.createElement("a");
+                        a.href = "javascript://";
+                        a.innerHTML = name;
+                        a.onclick = function () {
+                            var lnglat=marker.getLngLat ();
+                            map.panTo(lnglat,14);
+                            showPosition(marker, winHtml);
+                            var id1=document.getElementById("start");
+                            var id2=document.getElementById("end");
+                            var id3=document.getElementById("start_name");
+                            var id4=document.getElementById("end_name");
+
+                            if(id1.value==1)
+                            {
+                                id1.value=lnglat.getLng()+','+lnglat.getLat();
+                                id3.value=name;
+                            }
+
+                            else if(id2.value==1)
+                            {
+                                id2.value=lnglat.getLng()+','+lnglat.getLat();
+                                id4.value=name;
+                            }
+                            //alert(lnglat.getLng()+','+lnglat.getLat());
+                            //alert(name);
+                        }
+                        divMarker.appendChild(document.createTextNode((i + 1) + "."));
+                        divMarker.appendChild(a);
+                        divMarker.appendChild(document.createElement("br"));
+                    })(i);
+                }
+                //显示地图的最佳级别
+                map.setViewport(zoomArr);
+                lnglat0 = null;
+                lnglat0 = zoomArr;
+                lnglatName = null;
+                lnglatName = nameArr;
+                //显示搜索结果
+                divMarker.appendChild(document.createTextNode('共' + localsearch.getCountNumber() + '条记录，分' + localsearch.getCountPage() + '页,当前第' + localsearch.getPageIndex() + '页'));
+                document.getElementById("searchDiv").appendChild(divMarker);
+                document.getElementById("resultDiv").style.display = "block";
+            }
+        }
+
+        //显示信息框
+        function showPosition(marker, winHtml) {
+            var markerInfoWin = new T.InfoWindow(winHtml, {autoPan: true});
+            marker.openInfoWindow(markerInfoWin);
+        }
+
+        //解析推荐城市
+        function statistics(obj) {
+            if (obj) {
+                //坐标数组，设置最佳比例尺时会用到
+                var pointsArr = [];
+                var priorityCitysHtml = "";
+                var allAdminsHtml = "";
+                var priorityCitys = obj.priorityCitys;
+                if (priorityCitys) {
+                    //推荐城市显示
+                    priorityCitysHtml += "在中国以下城市有结果<ul>";
+                    for (var i = 0; i < priorityCitys.length; i++) {
+                        priorityCitysHtml += "<li>" + priorityCitys[i].name + "(" + priorityCitys[i].count + ")</li>";
+                    }
+                    priorityCitysHtml += "</ul>";
+                }
+
+                var allAdmins = obj.allAdmins;
+                if (allAdmins) {
+                    allAdminsHtml += "更多城市<ul>";
+                    for (var i = 0; i < allAdmins.length; i++) {
+                        allAdminsHtml += "<li>" + allAdmins[i].name + "(" + allAdmins[i].count + ")";
+                        var childAdmins = allAdmins[i].childAdmins;
+                        if (childAdmins) {
+                            for (var m = 0; m < childAdmins.length; m++) {
+                                allAdminsHtml += "<blockquote>" + childAdmins[m].name + "(" + childAdmins[m].count + ")</blockquote>";
+                            }
+                        }
+                        allAdminsHtml += "</li>"
+                    }
+                    allAdminsHtml += "</ul>";
+                }
+                document.getElementById("statisticsDiv").style.display = "block";
+                document.getElementById("statisticsDiv").innerHTML = priorityCitysHtml + allAdminsHtml;
+            }
+            map.setViewport(pointsArr);
+        }
+
+        //解析行政区划边界
+        function area(obj) {
+            if (obj) {
+                if(obj.points){
+                    //坐标数组，设置最佳比例尺时会用到
+                    var pointsArr = [];
+                    var points = obj.points;
+                    for (var i = 0; i < points.length; i++) {
+                        var regionLngLats = [];
+                        var regionArr = points[i].region.split(",");
+                        for (var m = 0; m < regionArr.length; m++) {
+                            var lnglatArr = regionArr[m].split(" ");
+                            var lnglat = new T.LngLat(lnglatArr[0], lnglatArr[1]);
+                            regionLngLats.push(lnglat);
+                            pointsArr.push(lnglat);
+                        }
+                        //创建线对象
+                        var line = new T.Polyline(regionLngLats, {
+                            color: "blue",
+                            weight: 3,
+                            opacity: 1,
+                            lineStyle: "dashed"
+                        });
+                        //向地图上添加线
+                        map.addOverLay(line);
+                    }
+                    //显示最佳比例尺
+                    map.setViewport(pointsArr);
+                }
+                if(obj.lonlat){
+                    var regionArr = obj.lonlat.split(",");
+                    map.panTo(new T.LngLat(regionArr[0], regionArr[1]));
+                }
+            }
+        }
+
+        function p_keywords(name) {
+            var id_point=document.getElementById("point");
+            id_point.value=name;
+        }
+        //解析建议词信息
+        function suggests(obj) {
+
+            if (obj) {
+                //建议词提示，如果搜索类型为公交规划建议词或公交站搜索时，返回结果为公交信息的建议词。
+                var suggestsHtml = "<div style='margin-left:8px;'>建议词提示</div>";
+                for (var i = 0; i < obj.length; i++) {
+                    suggestsHtml += "<a href='javascript://' onclick='p_keywords(\"" + obj[i].name +  "\");'>" + obj[i].name + "&nbsp;&nbsp;<font style='color:#666666'>" + obj[i].address + "</font><br></a>";
+                }
+                suggestsHtml += "";
+                document.getElementById("suggestsDiv").style.display = "block";
+                document.getElementById("suggestsDiv").innerHTML = suggestsHtml;
+            }
+
+        }
+
+        //清空地图及搜索列表
+        function clearAll() {
+            map.clearOverLays();
+            document.getElementById("searchDiv").innerHTML = "";
+            document.getElementById("resultDiv").style.display = "none";
+            document.getElementById("statisticsDiv").innerHTML = "";
+            document.getElementById("statisticsDiv").style.display = "none";
+            document.getElementById("promptDiv").innerHTML = "";
+            document.getElementById("promptDiv").style.display = "none";
+            document.getElementById("suggestsDiv").innerHTML = "";
+            document.getElementById("suggestsDiv").style.display = "none";
+        }
+
+        function GetFromLonlat() {
+            document.getElementById("resultDiv1").innerHTML = "";
+            var div = document.createElement("div");
+            var resultList = document.createElement("div");
+            var describeStr="";
+            for(var i=0;i<lnglat0.length;i++)
+            {
+                describeStr += "<div>" + lnglatName[i]+":"+lnglat0[i].getLng()+','+lnglat0[i].getLat()  +  "</div>";
+            }
+
+            div.innerHTML = describeStr;
+            resultList.appendChild(div);
+            document.getElementById("resultDiv1").appendChild(resultList);
+        }
+
+        function bbbb_start() {
+            var id=document.getElementById("start");
+            id.value=1;
+        }
+
+        function bbbb_end() {
+            var id=document.getElementById("end");
+            id.value=1;
+        }
+    </script>
+
+</head>
+<body  onload="onload()">
+	<div id="container">
+        <div  id="mapDiv1" ></div>
+        <div id="stateDiv">
+            状态栏：<input type="text" id="state"style="width: 400px" value=""/>
+        </div>
+        <div id="pointDiv">
+            <p>请输入查找地点</p>
+            <label></label><input type="text" id="point" value="南京工业大学">
+            <input type="button" id="Bpoint" value="查询" onclick="localsearch.search(document.getElementById('point').value)">
+        </div>
+
+        <div id="tool">
+             <!--<input type="button" id="123" value="132456" onclick="GetFromLonlat()">-->
+            <br><br>
+
+                <div id="promptDiv" class="prompt"></div>
+
+                <div id="statisticsDiv" class="statistics"></div>
+
+                <div id="suggestsDiv" class="suggests"></div>
+
+                <div id="resultDiv" class="result">
+                    <div id="searchDiv"></div>
+                    <div id="pageDiv">
+                        <input type="button" value="第一页" onClick="localsearch.firstPage()"/>
+                        <input type="button" value="上一页" onClick="localsearch.previousPage()"/>
+                        <input type="button" value="下一页" onClick="localsearch.nextPage()"/>
+                        <input type="button" value="最后一页" onClick="localsearch.lastPage()"/>
+                        <br/>
+                        转到第<input type="text" value="1" id="pageId" size="3"/>页
+                        <input type="button" onClick="localsearch.gotoPage(parseInt(document.getElementById('pageId').value));"
+                               value="转到"/>
+                    </div>
+            </div>
+		</div>
+
+        <div id="roadDiv" >
+            <p style="align-content: center">出行路线查询</p>
+            <input type="radio" name="planType" value="0" checked="checked"/>最少时间
+            <input type="radio" name="planType" value="1"/>最短距离
+            <input type="radio" name="planType" value="3"/>步行
+            <br/><br/>
+            <input type="button" id="bbb_start" value="起点" onclick="bbbb_start()">
+            ：<input type="text" id="start_name" value="请选择起点"/>
+            <br/><br/>
+            <input type="button" id="bbb_end" value="终点" onclick="bbbb_end()">
+            ：<input type="text" id="end_name" value="请选择终点"/>
+
+            <input type="text" id="start" style="display: none" value=""/>
+            <input type="text" id="end" style="display: none" value=""/>
+            <br/><br/>
+            <div align="right">
+                <input type="button"  onClick="searchDrivingRoute()" value="路线搜索"/>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            </div>
+        </div>
+
+
+        <div id="roadResultDiv" >
+
+            <label>路线：</label>
+
+            <!-- 结果面板 -->
+            <div id="resultDiv1" ></div>
+        </div>
+
+		</div>
+</body>
+</html>
